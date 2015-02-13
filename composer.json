@@ -1,0 +1,24 @@
+{
+    "name": "lenlorijn/environment",
+    "type": "library",
+    "description": "Environment Dev Setup commands for magerun",
+    "keywords": ["magerun"],
+    "homepage": "https://github.com/lenlorijn/environment",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Len Lorijn",
+            "email": "lenlorijn@gmail.com",
+            "homepage": "http://lenlorijn.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": ">=5.3.0"
+    },
+    "autoload": {
+        "psr-0": {
+            "Len": "src/"
+        }
+    }
+}

@@ -1,0 +1,19 @@
+autoloaders:
+  Len: %module%/src
+
+commands:
+  customCommands:
+    #- Elgentos\Magento\Command\System\Store\Config\BaseUrlSetCommand
+    #- Elgentos\Magento\Command\Extension\DisableCommand
+    #- Elgentos\Magento\Command\Extension\EnableCommand
+    #- Elgentos\Magento\Command\Extension\TranslationsCommand
+    #- Elgentos\Magento\Command\Dev\Events\FireCommand
+    #- Elgentos\Magento\Command\Customer\CleanTaxvatCommandonment\Command\SetupCommand
+
+       - Len\Environment\Command\SetupCommand
+      #- Len\Environment\Command\Setup\DbCommand
+      #- Len\Environment\Command\Setup\GitCommand
+      #- Len\Environment\Command\Config\ApacheCommand
+      #- Len\Environment\Command\Config\DbCommand #should get a better name, will config stores and set other dev settings
+      #- Len\Environment\Command\Config\AnonimizeCommand
+      #- Len\Environment\Command\Test\FunctionalCommand
