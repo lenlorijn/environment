@@ -15,5 +15,5 @@ commands:
       #- Len\Environment\Command\Setup\GitCommand #should checkout new project/branch/commit
       #- Len\Environment\Command\Config\ApacheCommand
       - Len\Environment\Command\Config\DbCommand #should get a better name, will config stores and set other dev settings
-      #- Len\Environment\Command\Config\AnonimizeCommand
+      - Len\Environment\Command\Config\AnonimizeCommand
       #- Len\Environment\Command\Test\FunctionalCommand
