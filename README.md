@@ -8,7 +8,7 @@ Thanks quafzi!
 OMFG DIRECT MYSLQ QUERY FAIL !!1!
 ---------------------------------
 
-Aweseome that you take a look at the code before using it.
+Aweseome that you took a look at the code before using it.
 And yes, the MySQL queries are raw.
 But I really don't want to trigger anything in magento in this case.
 I just want to clear the data.
