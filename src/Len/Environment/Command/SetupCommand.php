@@ -6,6 +6,7 @@ use N98\Magento\Command\AbstractMagentoCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\StringInput;
 
 
 
@@ -50,6 +51,19 @@ class SetupCommand extends AbstractMagentoCommand {
       passthru('modman clone https://github.com/AOEpeople/Aoe_TemplateHints.git');
       passthru('modman clone git@mediact.git.beanstalkapp.com:/mediact/commercebug.git');
 
-    }
+      $output->writeln("<info>Going to make Apache config</info>");
+      passthru('sudo n98-magerun len:config:apache '.$projectname);
 
+      //run other setup commands
+      //$input = new StringInput('len:config:apache '.$projectname);
+
+      // ensure that n98-magerun doesn't stop after first command
+      //$this->getApplication()->setAutoExit(false);
+     
+      // with output
+      //$this->getApplication()->run($input, $output);
+      
+      // reactivate auto-exit
+      //$this->getApplication()->setAutoExit(true);
+    }
 }
