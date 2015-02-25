@@ -32,16 +32,13 @@ class SetupCommand extends AbstractMagentoCommand {
       $projectname = $input->getArgument('projectname');
 
       $output->writeln("<info>Making dir /var/www/".$projectname." and going there</info>");
-      mkdir('/var/www/'.$projectname);
-      chdir('/var/www/'.$projectname);
+
+      $output->writeln("<info>Cloning repo: git@mediact.git.beanstalkapp.com:/mediact/".$projectname.".git </info>");
+      passthru('git clone git@mediact.git.beanstalkapp.com:/mediact/'.$projectname.'.git '.$projectname);
 
       $output->writeln("<info>initialising git git flow and attempting to fetch repo</info>");
-      passthru('git init');
+      chdir('/var/www/'.$projectname);
       passthru('git flow init');
-
-      $output->writeln("<info>Adding repo: git@mediact.git.beanstalkapp.com:/mediact/".$projectname.".git </info>");
-      passthru('git remote add origin git@mediact.git.beanstalkapp.com:/mediact/'.$projectname.'.git');
-      passthru('git pull');
 
       $output->writeln("<info>Initialising modman</info>");
       passthru('modman init');
