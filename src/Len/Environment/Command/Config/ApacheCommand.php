@@ -25,8 +25,13 @@ class ApacheCommand extends AbstractMagentoCommand {
   */
   public function execute(InputInterface $input, OutputInterface $output)
   {
+    $this->detectMagento($output, true);
+    $this->initMagento();
+
+    $storeCodes = $this->getStoreCodes();
+
     $projectname = $input->getArgument('projectname');
-    $templateVariables = array('project_name' => $projectname );
+    $templateVariables = array('project_name' => $projectname, 'stores' => $storeCodes );
 
     $virtualhostTemplate = file_get_contents(__DIR__.'/templates/apache/virtualhost.conf.twig');
 
@@ -46,6 +51,17 @@ class ApacheCommand extends AbstractMagentoCommand {
   {
     exec('a2ensite '.$projectname);
     exec('apachectl -k graceful');
+  }
+
+  protected function getStoreCodes()
+  {
+    $stores = array();
+
+    foreach (\Mage::app()->getStores() as $store) {
+        $stores[]=$store->getCode();
+    }
+
+    return $stores;
   }
 
 }
