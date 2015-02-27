@@ -1,6 +1,5 @@
 <VirtualHost *:80>
     ServerName {{ project_name }}.dev.mediacthq.nl 
-    SetEnv MAGE_RUN_CODE default
 
     {% for storeCode in stores %}
     ServerAlias {{ storeCode }}-{{ project_name }}.dev.mediacthq.nl
