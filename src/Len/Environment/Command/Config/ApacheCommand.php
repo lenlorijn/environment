@@ -49,8 +49,8 @@ class ApacheCommand extends AbstractMagentoCommand {
    */
   protected function applyChanges($projectname)
   {
-    exec('a2ensite '.$projectname);
-    exec('apachectl -k graceful');
+    passthru('a2ensite '.$projectname);
+    passthru('apachectl -k graceful');
   }
 
   protected function getStoreCodes()
