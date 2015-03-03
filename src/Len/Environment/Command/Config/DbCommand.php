@@ -77,11 +77,14 @@ class DbCommand extends AbstractMagentoCommand {
       $writeConnection->query("UPDATE core_config_data SET value=1 WHERE path LIKE '%/testmode'");
 
       $output->writeln("<info>Flushing cache to apply changes in config</info>");
-      $this->flushCache();
+      $this->flushCache($output);
 
     }
 
-    protected function flushCache()
+    /**
+     * Flushes the magento cache for good measure
+     */
+    protected function flushCache(OutputInterface $output)
     {
       $input = new StringInput('cache:flush');
 
