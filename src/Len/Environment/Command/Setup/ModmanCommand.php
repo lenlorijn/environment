@@ -49,6 +49,7 @@ class ModmanCommand extends AbstractMagentoCommand
         $output->writeln("<info>Cloning standard dev tools in to repo</info>");
         passthru('modman clone https://github.com/AOEpeople/Aoe_Profiler.git');
         passthru('modman clone https://github.com/AOEpeople/Aoe_TemplateHints.git');
+        passthru('modman clone https://github.com/AOEpeople/Aoe_Scheduler.git');
         passthru('modman clone git@mediact.git.beanstalkapp.com:/mediact/commercebug.git');
     }
 }

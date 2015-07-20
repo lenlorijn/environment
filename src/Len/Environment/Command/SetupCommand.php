@@ -12,19 +12,21 @@ use Symfony\Component\Console\Input\StringInput;
 
 class SetupCommand extends AbstractMagentoCommand {
 
-    /**
+     /**
      * Configure the command
+     *
      * @return void
      */
-    public function configure(){
+    public function configure()
+    {
         $this->setName('len:setup')
             ->addArgument('projectname', InputArgument::REQUIRED, "The name of the project")
             ->setDescription('Set up a new dev env');
     }
 
     /**
-     * Execute Setup Command
-     *
+    * Execute Setup Command
+    *
     * @param \Symfony\Component\Console\Input\InputInterface   $input
     * @param \Symfony\Component\Console\Output\OutputInterface $output
     *
