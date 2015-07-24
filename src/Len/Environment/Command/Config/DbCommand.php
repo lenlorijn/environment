@@ -76,6 +76,9 @@ class DbCommand extends AbstractMagentoCommand {
       $writeConnection->query("UPDATE core_config_data SET value='test' WHERE value LIKE 'prod'");
       $writeConnection->query("UPDATE core_config_data SET value=1 WHERE path LIKE '%/testmode'");
 
+      $output->writeln("<info>Setting allow symlink to true</info>");
+      $writeConnection->query("UPDATE core_config_data SET value='1' WHERE path='dev/template/allow_symlink'");
+
       $output->writeln("<info>Flushing cache to apply changes in config</info>");
       $this->flushCache();
 
