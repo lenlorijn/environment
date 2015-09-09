@@ -11,3 +11,4 @@ commands:
       - Len\Environment\Command\Config\AnonimizeCommand
       #- Len\Environment\Command\Test\FunctionalCommand
       - Len\Environment\Command\Stores\UrlsCommand
+      - Len\Environment\Command\Stores\Urls\Generate\ApacheCommand
