@@ -36,21 +36,21 @@ class TransformCommand extends AbstractMagentoCommand
             'p',
             InputArgument::OPTIONAL,
             'The name of the project. Defaults to the current directory.',
-            basename(getcwd())
+            UrlTransformer::getDefaultProject()
         );
         $this->addOption(
             'environment',
             'e',
             InputArgument::OPTIONAL,
             'The environment to transform to: staging, dev',
-            UrlTransformer::DEFAULT_ENVIRONMENT
+            UrlTransformer::getDefaultEnvironment()
         );
         $this->addOption(
             'domain',
             'd',
             InputArgument::OPTIONAL,
             'The domain to use as top level',
-            UrlTransformer::DEFAULT_DOMAIN
+            UrlTransformer::getDefaultDomain()
         );
     }
 

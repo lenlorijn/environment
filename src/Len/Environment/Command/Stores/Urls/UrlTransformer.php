@@ -67,6 +67,42 @@ class UrlTransformer
     }
 
     /**
+     * Return the default project name.
+     *
+     * @return string
+     */
+    public static function getDefaultProject()
+    {
+        static $rv;
+
+        if (!isset($rv)) {
+            $rv = basename(getcwd());
+        }
+
+        return $rv;
+    }
+
+    /**
+     * Get the default environment.
+     *
+     * @return string
+     */
+    public static function getDefaultEnvironment()
+    {
+        return static::DEFAULT_ENVIRONMENT;
+    }
+
+    /**
+     * The default domain name.
+     *
+     * @return string
+     */
+    public static function getDefaultDomain()
+    {
+        return static::DEFAULT_DOMAIN;
+    }
+
+    /**
      * Getter for the _application property.
      *
      * @return \Mage_Core_Model_App
@@ -84,12 +120,13 @@ class UrlTransformer
      * Getter for the project property.
      *
      * @return string
-     * @throws \LogicException when property project is not set.
      */
     public function getProject()
     {
         if (!isset($this->_project)) {
-            throw new \LogicException('Missing property project');
+            $this->setProject(
+                static::getDefaultProject()
+            );
         }
 
         return $this->_project;
@@ -120,13 +157,13 @@ class UrlTransformer
      * Getter for the domain property.
      *
      * @return string
-     * @throws \LogicException when property domain is not set.
      */
     public function getDomain()
     {
         if (!isset($this->_domain)) {
-            throw new \LogicException('Missing property domain');
+            $this->setDomain(static::getDefaultDomain());
         }
+
         return $this->_domain;
     }
 
@@ -155,13 +192,15 @@ class UrlTransformer
      * Getter for the environment property.
      *
      * @return string
-     * @throws \LogicException when property environment is not set.
      */
     public function getEnvironment()
     {
         if (!isset($this->_environment)) {
-            throw new \LogicException('Missing property environment');
+            $this->setEnvironment(
+                static::getDefaultEnvironment()
+            );
         }
+
         return $this->_environment;
     }
 
