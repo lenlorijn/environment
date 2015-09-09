@@ -13,3 +13,4 @@ commands:
       - Len\Environment\Command\Stores\UrlsCommand
       - Len\Environment\Command\Stores\Urls\Generate\ApacheCommand
       - Len\Environment\Command\Stores\Urls\Generate\HostsCommand
+      - Len\Environment\Command\Stores\Urls\TransformCommand

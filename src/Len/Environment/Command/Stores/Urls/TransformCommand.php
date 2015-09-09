@@ -30,10 +30,27 @@ class TransformCommand extends AbstractMagentoCommand
         $this->setDescription(
             'Transform URL structure from production => staging => dev'
         );
-        $this->addArgument(
+
+        $this->addOption(
+            'project',
+            'p',
+            InputArgument::OPTIONAL,
+            'The name of the project. Defaults to the current directory.',
+            basename(getcwd())
+        );
+        $this->addOption(
             'environment',
-            InputArgument::REQUIRED,
-            'The environment to transform to: staging, dev'
+            'e',
+            InputArgument::OPTIONAL,
+            'The environment to transform to: staging, dev',
+            UrlTransformer::DEFAULT_ENVIRONMENT
+        );
+        $this->addOption(
+            'domain',
+            'd',
+            InputArgument::OPTIONAL,
+            'The domain to use as top level',
+            UrlTransformer::DEFAULT_DOMAIN
         );
     }
 
@@ -43,37 +60,109 @@ class TransformCommand extends AbstractMagentoCommand
      * @param InputInterface $input
      * @param OutputInterface $output
      * @return void
+     * @throws \RuntimeException when Magento could not be initialized.
      * @throws \InvalidArgumentException when the environment argument is not
      *   one of staging or dev.
      */
     public function execute(InputInterface $input, OutputInterface $output)
     {
-        $destination = $input->getArgument('environment');
-
-        static $allowedDestinations = array('staging', 'dev');
-
-        if (!in_array($destination, $allowedDestinations, true)) {
-            throw new \InvalidArgumentException(
-                'Destination environment must be one of: '
-                . implode(', ', $allowedDestinations)
-                . "; Yet received: {$destination}"
-            );
-        }
-
         $this->detectMagento($output, true);
 
         if (!$this->initMagento()) {
             throw new \RuntimeException('Could not initialize Magento!');
         }
 
-        static $fetcher;
+        $transformer = new UrlTransformer(\Mage::app());
 
-        if (!isset($fetcher)) {
-            $fetcher = new HostNameFetcher();
+        try {
+            $transformer->setEnvironment(
+                $input->getOption('environment')
+            );
+        } catch (\InvalidArgumentException $e) {
+            throw new \InvalidArgumentException(
+                "Invalid environment supplied: {$e->getMessage()}",
+                $e->getCode(),
+                $e
+            );
         }
 
-        $hostNames = $fetcher->getByConfig(
-            \Mage::getConfig()
+        $transformer->setProject($input->getOption('project'));
+        $transformer->setDomain($input->getOption('domain'));
+
+        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+            $output->writeln(
+                "<info>Domain:</info> {$transformer->getDomain()}"
+            );
+            $output->writeln(
+                "<info>Project:</info> {$transformer->getProject()}"
+            );
+            $output->writeln(
+                "<info>Environment:</info> {$transformer->getEnvironment()}"
+            );
+            $output->writeln(
+                "<info>Default domain:</info> {$transformer->createDomain()}"
+            );
+        }
+
+        $this->processStores($transformer, $output);
+
+        // Clean the config cache.
+        \Mage::getConfig()->cleanCache();
+    }
+
+    /**
+     * Process the stores for the supplied mage application.
+     *
+     * @param UrlTransformer $transformer
+     * @param OutputInterface $output
+     * @return void
+     */
+    protected function processStores(
+        UrlTransformer $transformer,
+        OutputInterface $output
+    )
+    {
+        foreach ($transformer->getApplicableStores() as $store) {
+            $this->processStore(
+                $transformer,
+                $store,
+                $output
+            );
+        }
+    }
+
+    /**
+     * Process the given store.
+     *
+     * @param UrlTransformer $transformer
+     * @param \Mage_Core_Model_Store $store
+     * @param OutputInterface $output
+     * @return void
+     */
+    protected function processStore(
+        UrlTransformer $transformer,
+        \Mage_Core_Model_Store $store,
+        OutputInterface $output
+    )
+    {
+        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+            $output->writeln(
+                "<comment>{$store->getCode()}</comment> "
+                . "<info>{$store->getName()}</info> "
+                . "- {$store->getFrontendName()}"
+            );
+        }
+
+        $output->writeln(
+            $transformer->createDomain($store)
         );
+
+        $rewrites = $transformer->rewriteStore($store);
+
+        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+            foreach ($rewrites as $xpath => $baseUrl) {
+                $output->writeln("\t<info>{$xpath}</info> => {$baseUrl}");
+            }
+        }
     }
 }
