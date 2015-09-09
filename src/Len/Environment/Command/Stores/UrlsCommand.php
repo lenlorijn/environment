@@ -4,8 +4,10 @@
  *
  * @package Len\Environment\Command\Stores
  */
+
 namespace Len\Environment\Command\Stores;
 
+use \Len\Environment\Command\Stores\Urls\HostNameFetcher;
 use \N98\Magento\Command\AbstractMagentoCommand;
 use \Symfony\Component\Console\Input\InputInterface;
 use \Symfony\Component\Console\Output\OutputInterface;
@@ -55,45 +57,13 @@ class UrlsCommand extends AbstractMagentoCommand
             );
         }
 
-        $readConnection = $resource->getConnection('core_read');
+        static $fetcher;
 
-        $select = $readConnection
-            ->select()
-            ->from(
-                array('c' => 'core_config_data'),
-                array('url' => 'c.value')
-            )
-            ->where(
-                'c.path IN(?)',
-                array(
-                    'web/unsecure/base_url',
-                    'web/secure/base_url'
-                )
-            );
+        if (!isset($fetcher)) {
+            $fetcher = new HostNameFetcher();
+        }
 
-        // Fetch all unique host names.
-        $hostNames = array_unique(
-            // Filter out empty entries.
-            array_filter(
-                array_map(
-                    // Strip off the 'www.' subdomain.
-                    function (array $row) {
-                        return preg_replace(
-                            '/^www\./i',
-                            '',
-                            parse_url(
-                                $row['url'],
-                                PHP_URL_HOST
-                            )
-                        );
-                    },
-                    // Fetch all rows for the given Select instance.
-                    $readConnection->fetchAll($select)
-                )
-            )
-        );
-
-        sort($hostNames);
+        $hostNames = $fetcher->getByResource($resource);
 
         foreach ($hostNames as $hostName) {
             $output->writeln($hostName);
