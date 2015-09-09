@@ -49,21 +49,15 @@ class UrlsCommand extends AbstractMagentoCommand
             throw new \RuntimeException('Could not initialize Magento!');
         }
 
-        $resource = \Mage::getSingleTon('core/resource');
-
-        if (!($resource instanceof \Mage_Core_Model_Resource)) {
-            throw new \RuntimeException(
-                'Unexpected resource entity: ' . get_class($resource)
-            );
-        }
-
         static $fetcher;
 
         if (!isset($fetcher)) {
             $fetcher = new HostNameFetcher();
         }
 
-        $hostNames = $fetcher->getByResource($resource);
+        $hostNames = $fetcher->getByConfig(
+            \Mage::getConfig()
+        );
 
         foreach ($hostNames as $hostName) {
             $output->writeln($hostName);

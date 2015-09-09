@@ -22,9 +22,15 @@ class HostNameFetcher
      */
     public function getByConnection(\Varien_Db_Adapter_Interface $db)
     {
-        return $this->fetchHostNames(
-            $db,
-            $this->createSelect($db)
+        return $this->filterHostNames(
+            array_map(
+                function (array $row) {
+                    return $row['url'];
+                },
+                $db->fetchAll(
+                    $this->createSelect($db)
+                )
+            )
         );
     }
 
@@ -52,16 +58,12 @@ class HostNameFetcher
     }
 
     /**
-     * Fetch host names for the supplied database adapter and select query.
+     * Filter the supplied list of host names, make them unique and sort them.
      *
-     * @param \Varien_Db_Adapter_Interface $db
-     * @param \Varien_Db_Select $select
+     * @param array $hostNames
      * @return array
      */
-    protected function fetchHostNames(
-        \Varien_Db_Adapter_Interface $db,
-        \Varien_Db_Select $select
-    )
+    protected function filterHostNames(array $hostNames)
     {
         // Fetch all unique host names.
         $rv = array_unique(
@@ -69,18 +71,17 @@ class HostNameFetcher
             array_filter(
                 array_map(
                     // Strip off the 'www.' sub-domain.
-                    function (array $row) {
+                    function ($url) {
                         return preg_replace(
                             '/^www\./i',
                             '',
                             parse_url(
-                                $row['url'],
+                                $url,
                                 PHP_URL_HOST
                             )
                         );
                     },
-                    // Fetch all rows for the given Select instance.
-                    $db->fetchAll($select)
+                    $hostNames
                 )
             )
         );
@@ -100,6 +101,26 @@ class HostNameFetcher
     {
         return $this->getByConnection(
             $resource->getConnection('core_read')
+        );
+    }
+
+    /**
+     * Get a list of host names for the supplied magento configuration.
+     *
+     * @param \Mage_Core_Model_Config $config
+     * @return array
+     */
+    public function getByConfig(\Mage_Core_Model_Config $config)
+    {
+        return $this->filterHostNames(
+            array_merge(
+                $config->getStoresConfigByPath(
+                    'web/unsecure/base_url'
+                ),
+                $config->getStoresConfigByPath(
+                    'web/secure/base_url'
+                )
+            )
         );
     }
 }
