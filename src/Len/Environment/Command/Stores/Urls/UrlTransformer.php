@@ -258,7 +258,11 @@ class UrlTransformer
     {
         $rv = implode(
             '.',
-            [$this->getProject(), $this->getEnvironment(), $this->getDomain()]
+            array(
+                $this->getProject(),
+                $this->getEnvironment(),
+                $this->getDomain()
+            )
         );
 
         if (isset($store) && $store->isAdmin() === false) {
@@ -308,10 +312,10 @@ class UrlTransformer
      */
     public function getStoreRewrites(\Mage_Core_Model_Store $store)
     {
-        return [
+        return array(
             'web/unsecure/base_url' => $this->transformBaseUrl($store),
             'web/secure/base_url' => $this->transformBaseUrl($store, true)
-        ];
+        );
     }
 
     /**
