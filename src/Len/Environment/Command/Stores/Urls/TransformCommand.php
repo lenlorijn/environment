@@ -89,7 +89,7 @@ class TransformCommand extends AbstractMagentoCommand
         $transformer->setProject($input->getOption('project'));
         $transformer->setDomain($input->getOption('domain'));
 
-        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+        if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
             $output->writeln(
                 "<info>Domain:</info> {$transformer->getDomain()}"
             );
@@ -145,7 +145,7 @@ class TransformCommand extends AbstractMagentoCommand
         OutputInterface $output
     )
     {
-        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+        if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
             $output->writeln(
                 "<comment>{$store->getCode()}</comment> "
                 . "<info>{$store->getName()}</info> "
@@ -159,7 +159,7 @@ class TransformCommand extends AbstractMagentoCommand
 
         $rewrites = $transformer->rewriteStore($store);
 
-        if ($output->getVerbosity() === $output::VERBOSITY_VERBOSE) {
+        if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
             foreach ($rewrites as $xpath => $baseUrl) {
                 $output->writeln("\t<info>{$xpath}</info> => {$baseUrl}");
             }
