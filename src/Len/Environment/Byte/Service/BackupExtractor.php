@@ -7,7 +7,6 @@
 
 namespace Len\Environment\Byte\Service;
 
-
 /**
  * Backup extractor.
  */
