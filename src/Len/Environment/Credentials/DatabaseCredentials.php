@@ -7,6 +7,7 @@
 
 namespace Len\Environment\Credentials;
 
+use \N98\Magento\Application;
 use \N98\Magento\Command\AbstractMagentoCommand;
 use \Symfony\Component\Console\Helper\QuestionHelper;
 use \Symfony\Component\Console\Input\InputInterface;
@@ -336,6 +337,119 @@ final class DatabaseCredentials
         );
 
         return $rv;
+    }
+
+    /**
+     * Create database credentials from the supplied application, using the
+     * corresponding local.xml file.
+     *
+     * @param Application $app
+     * @return static
+     * @throws \RuntimeException when the local.xml file does not exist or is
+     *   not writable.
+     */
+    public static function fromApplication(Application $app)
+    {
+        $rv = new static();
+
+        $root = $app->getMagentoRootFolder();
+        $localXmlPath = realpath("{$root}/app/etc/local.xml");
+
+        if (!file_exists($localXmlPath) || !is_writable($localXmlPath)) {
+            throw new \RuntimeException(
+                'File does not exist or could not be written to: '
+                . var_export($localXmlPath, true)
+            );
+        }
+
+        // Load the XML and travel down the xpath until we find our connection.
+        $localXml = simplexml_load_file($localXmlPath);
+        $connection = $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection;
+
+        if (property_exists($connection, 'host')) {
+            $rv->setHost((string) $connection->host);
+        }
+
+        if (property_exists($connection, 'port')) {
+            $rv->setPort((int) $connection->port);
+        }
+
+        if (property_exists($connection, 'username')) {
+            $rv->setUser((string) $connection->username);
+        }
+
+        if (property_exists($connection, 'password')) {
+            $rv->setPassword((string) $connection->password);
+        }
+
+        if (property_exists($connection, 'dbname')) {
+            $rv->setDatabase((string) $connection->dbname);
+        }
+
+        return $rv;
+    }
+
+    /**
+     * Store the current database credentials to the default database
+     * connection of the supplied application in the corresponding local.xml.
+     *
+     * @param Application $app
+     * @return void
+     * @throws \RuntimeException when the local.xml file does not exist or is
+     *   not writable.
+     */
+    public function saveToApplication(Application $app)
+    {
+        $root = $app->getMagentoRootFolder();
+        $localXmlPath = realpath("{$root}/app/etc/local.xml");
+
+        if (!file_exists($localXmlPath) || !is_writable($localXmlPath)) {
+            throw new \RuntimeException(
+                'File does not exist or could not be written to: '
+                . var_export($localXmlPath, true)
+            );
+        }
+
+        // Load the XML and travel down the xpath until we find our connection.
+        $localXml = simplexml_load_file($localXmlPath);
+
+        // Update the connection settings.
+        $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection->host = $this->getHost();
+
+        $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection->port = $this->getPort();
+
+        $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection->username = $this->getUser();
+
+        $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection->password = $this->getPassword();
+
+        $localXml
+            ->global
+            ->resources
+            ->default_setup
+            ->connection->dbname = $this->getDatabase();
+
+        // And persist the changes.
+        $localXml->asXML($localXmlPath);
     }
 
     /**

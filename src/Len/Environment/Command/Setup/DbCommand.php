@@ -1,347 +1,805 @@
 <?php
+/**
+ * Setup command for Magento databases.
+ *
+ * @package Len\Environment\Command\Setup
+ */
 
 namespace Len\Environment\Command\Setup;
 
-use N98\Magento\Command\AbstractMagentoCommand;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
+use \Len\Environment\Byte\Service\ByteServiceClient;
+use \Len\Environment\Byte\Service\DatabaseBackup;
+use \Len\Environment\Byte\Service\Registrant;
+use \Len\Environment\Credentials\ByteCredentials;
+use \Len\Environment\Credentials\DatabaseCredentials;
+use \N98\Magento\Command\AbstractMagentoCommand;
+use \Symfony\Component\Console\Helper\QuestionHelper;
+use \Symfony\Component\Console\Input\InputInterface;
+use \Symfony\Component\Console\Input\InputOption;
+use \Symfony\Component\Console\Output\OutputInterface;
+use \Symfony\Component\Console\Question\ChoiceQuestion;
+use \Symfony\Component\Console\Question\ConfirmationQuestion;
+use \Symfony\Component\Console\Question\Question;
 
-class DbCommand extends AbstractMagentoCommand 
+/**
+ * Setup command for Magento databases.
+ */
+class DbCommand extends AbstractMagentoCommand
 {
     /**
-     * The URL to the Byte DB backup API
+     * The file name for import files to look for by default.
      *
-     * @var string
+     * @var string DEFAULT_IMPORT_FILE_NAME
      */
-    protected $byteUrl = 'https://service.byte.nl/';
+    const DEFAULT_IMPORT_FILE_NAME = 'import.sql';
 
     /**
-     * The byte user to user for retrieving DBs
+     * The credentials used to authenticate with the database.
      *
-     * @var string
+     * @var DatabaseCredentials $_databaseCredentials
      */
-    protected $byteUser;
+    protected $_databaseCredentials;
 
     /**
-     * The byte password to user for retrieving DBs
-     * @var string
-     */
-    protected $bytePassword;
-
-    /**
-     * DB User of local DB
+     * The path to the database client binary.
      *
-     * @var string
+     * @var string $_databaseClient
      */
-    protected $dbUser = 'root';
+    protected $_databaseClient;
 
     /**
-     * DB Password of local DB
+     * The Byte Service Client.
      *
-     * @var string
+     * @var ByteServiceClient $_byteClient
      */
-    protected $dbPassword = '';
+    protected $_byteClient;
 
     /**
-     * DB Host of local DB
+     * Configure the command.
      *
-     * @var string
-     */
-    protected $dbHost = 'localhost';
-
-    /**
-     * DB Name of local DB
-     *
-     * @var string
-     */
-    protected $dbName = '';
-
-    /**
-     * Configure the command
      * @return void
      */
-    public function configure() 
+    public function configure()
     {
-        $this->setName('len:setup:db')
-            ->setDescription('Installs a new DB');
+        $this->setName('len:setup:db');
+        $this->setDescription('Installs a new DB');
+        $this->addOption(
+            'use-local-xml',
+            'l',
+            InputOption::VALUE_NONE,
+            'Use the local.xml for database credentials'
+        );
+
+        $this->addOption(
+            'skip-byte-auth',
+            'b',
+            InputOption::VALUE_NONE,
+            'Skip authentication using ' . ByteServiceClient::AUTH_FILE
+        );
     }
 
     /**
-    * Execute the Db setup command
-    *
-    * @param \Symfony\Component\Console\Input\InputInterface   $input
-    * @param \Symfony\Component\Console\Output\OutputInterface $output
-    *
-    * @return int|void
-    */
+     * Execute the Db setup command.
+     *
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return void
+     */
     public function execute(InputInterface $input, OutputInterface $output)
     {
-        $dialog = $this->getHelper('dialog');
+        $credentials = $this->fetchDatabaseCredentials($input, $output);
+        $this->createDatabaseIfNotExists();
 
-        // Get DB Creds
-        $this->getDbCredentials($output);
+        $questionHelper = $this->getHelper('question');
 
-        // Does database already exist?
-        if ($dialog->askConfirmation(
-            $output,
-            '<question>Do you want to use an existing database?</question>',
-            false
-        )) {
-            // Update local.xml file
-            $this->updateLocalxml();
-        } else {
-            // Create DB and update local.xml
-            $this->createDatabase();
-            $this->updateLocalxml();
+        if (!($questionHelper instanceof QuestionHelper)) {
+            throw new \RuntimeException(
+                'Received wrong helper entity: ' . get_class($questionHelper)
+            );
         }
 
-        // New data?
-        if ($dialog->askConfirmation(
-            $output,
-            '<question>Would you like to use new data?</question>',
-            true
-        )) {
-            // What way would you like to import the DB? (byte, staging, file)
-            $availableMethods = array('byte','staging', 'file');
-            $method = $dialog->select(
-                $output,
-                '<question>Where would you like to get your database from?</question>',
-                $availableMethods
+        if (!$input->getOption('use-local-xml')) {
+            $updateCredentialsQuestion = new ConfirmationQuestion(
+                'Update the database credentials in local.xml? [Y|n] '
             );
 
-            if ($method === '0' || $method === '1') {
-                // Get Byte file
-                $this->getByteDb($output, ($method === 'staging'));
+            if ($questionHelper->ask(
+                $input,
+                $output,
+                $updateCredentialsQuestion
+            )) {
+                $this->updateLocalCredentials($credentials);
+                $output->writeln(
+                    'Updated local.xml with new database credentials'
+                );
+            }
+        }
 
-            } else {
-                // Import file
-                $filename = $this->getFileName($output);
+        $importQuestion = new ConfirmationQuestion(
+            'Would you like to import data? [Y|n] '
+        );
 
-                $this->importFile($filename);
+        if ($questionHelper->ask($input, $output, $importQuestion)) {
+            $this->processImportRequest(
+                $questionHelper,
+                $input,
+                $output
+            );
+        }
+
+        $output->writeln(
+            'Finished setting up database: '
+            . "<comment>{$credentials->getDatabase()}</comment>"
+        );
+    }
+
+    /**
+     * Create a new byte service client.
+     *
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return ByteServiceClient
+     * @throws \UnexpectedValueException when one of the factory techniques
+     *   delivers anything but an instance of ByteServiceClient.
+     */
+    protected function createByteClient(
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        if (!$input->getOption('skip-byte-auth')) {
+            $authFile = ByteServiceClient::AUTH_FILE;
+
+            try {
+                $client = ByteServiceClient::fromAuthFile();
+            } catch (\Exception $e) {
+                $client = null;
             }
 
-        } else {
-            return true;
+            if (isset($client)) {
+                $output->writeln(
+                    "Using credentials from: <comment>{$authFile}</comment>"
+                );
+            }
         }
 
+        if (!isset($client)) {
+            $client = new ByteServiceClient(
+                ByteCredentials::fromQuestionHelper(
+                    $questionHelper,
+                    $input,
+                    $output
+                )
+            );
+        }
+
+        if (!($client instanceof ByteServiceClient)) {
+            throw new \UnexpectedValueException(
+                'Expected instance of ByteServiceClient!'
+            );
+        }
+
+        return $client;
     }
 
     /**
-     * Get Credentials for the local DB
+     * Getter for the _byteClient property.
      *
+     * @return ByteServiceClient
+     * @throws \LogicException when property _byteClient is not set.
+     */
+    protected function getByteClient()
+    {
+        if (!isset($this->_byteClient)) {
+            throw new \LogicException('Missing property _byteClient');
+        }
+
+        return $this->_byteClient;
+    }
+
+    /**
+     * Setter for the _byteClient property.
+     *
+     * @param ByteServiceClient $byteClient
+     * @return static
+     */
+    protected function setByteClient(ByteServiceClient $byteClient)
+    {
+        $this->_byteClient = $byteClient;
+
+        return $this;
+    }
+
+    /**
+     * Process the custom requirements for importing data into the current
+     * database.
+     *
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
      * @param OutputInterface $output
+     * @return void
+     */
+    protected function processImportRequest(
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        $importMethods = ['live', 'staging', 'file'];
+        $byteMethods = ['live', 'staging'];
+
+        $importMethodQuestion = new ChoiceQuestion(
+            'What is the source? ',
+            $importMethods
+        );
+
+        $method = $questionHelper->ask($input, $output, $importMethodQuestion);
+
+        // Ensure there is a byte client at this point.
+        if (in_array($method, $byteMethods, true)) {
+            try {
+                $this->getByteClient();
+            } catch (\LogicException $e) {
+                $this->setByteClient(
+                    $this->createByteClient(
+                        $questionHelper,
+                        $input,
+                        $output
+                    )
+                );
+            }
+        }
+
+        switch ($method) {
+            case 'file':
+                $this->processFileImportRequest(
+                    $questionHelper,
+                    $input,
+                    $output
+                );
+                break;
+            case 'staging':
+                $this->processByteStagingImportRequest(
+                    $questionHelper,
+                    $input,
+                    $output
+                );
+                break;
+            case 'live':
+                $this->processByteLiveImportRequest(
+                    $questionHelper,
+                    $input,
+                    $output
+                );
+                break;
+            default:
+                throw new \LogicException(
+                    "Missing implementation for import method: {$method}"
+                );
+        }
+    }
+
+    /**
+     * Process the import request for live Byte environment.
+     *
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return void
+     * @throws \RuntimeException when a registrant could not be selected.
+     */
+    protected function processByteLiveImportRequest(
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        $client = $this->getByteClient();
+
+        $registrants = $client->getRegistrants();
+
+        $registrantName = $questionHelper->ask(
+            $input,
+            $output,
+            new ChoiceQuestion(
+                'Please choose a registrant: ',
+                array_map(
+                    function (Registrant $registrant) {
+                        return $registrant->getName();
+                    },
+                    $registrants
+                )
+            )
+        );
+
+        foreach ($registrants as $currentRegistrant) {
+            if ($currentRegistrant->getName() === $registrantName) {
+                $registrant = $currentRegistrant;
+                break;
+            }
+        }
+
+        if (!isset($registrant)) {
+            throw new \RuntimeException('Invalid registrant offset');
+        }
+
+        $this->processByteRegistrantImportRequest(
+            $registrant,
+            $questionHelper,
+            $input,
+            $output
+        );
+    }
+
+    /**
+     * Process the import request for staging Byte environment.
+     *
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return void
+     */
+    protected function processByteStagingImportRequest(
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        $output->writeln(
+            '<comment>Guessing staging account based on Byte '
+            . 'credentials. . .</comment>'
+        );
+
+        try {
+            $registrant = $this
+                ->getByteClient()
+                ->getMainRegistrant();
+        } catch (\OutOfBoundsException $e) {
+            $registrant = null;
+        }
+
+        if ($registrant instanceof Registrant) {
+            $this->processByteRegistrantImportRequest(
+                $registrant,
+                $questionHelper,
+                $input,
+                $output
+            );
+        } else {
+            $output->writeln(
+                '<error>Could not automatically determine staging '
+                . 'account</error>'
+            );
+            $output->writeln(
+                '<info>You can try again using the "live" method</info>'
+            );
+        }
+    }
+
+    /**
+     * Process an import request for a Byte registrant.
+     *
+     * @param Registrant $registrant
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return void
+     */
+    protected function processByteRegistrantImportRequest(
+        Registrant $registrant,
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        $client = $this->getByteClient();
+
+        $output->writeln(
+            "Selected registrant <comment>{$registrant->getName()}</comment>"
+        );
+
+        $domains = $client->getDomains($registrant);
+
+        $domain = $questionHelper->ask(
+            $input,
+            $output,
+            new ChoiceQuestion(
+                'Database domain: ',
+                $domains
+            )
+        );
+
+        $output->writeln(
+            "Requesting database list for <comment>{$domain}</comment>. . ."
+        );
+
+        $databases = $client->getDatabases($domain);
+
+        if (empty($databases)) {
+            throw new \RuntimeException(
+                "Could not fetch databases for domain: {$domain}"
+            );
+        }
+
+        $database = current($databases);
+
+        if (count($databases) > 1) {
+            // Let the user select a database.
+            $database = $questionHelper->ask(
+                $input,
+                $output,
+                new ChoiceQuestion(
+                    'Which database do you prefer? '
+                    . "[<comment>{$database}</comment>]",
+                    $databases,
+                    $database
+                )
+            );
+        }
+
+        $output->writeln(
+            "Fetching backup list for <comment>{$database}</comment>. . ."
+        );
+
+        $backups = $client->getDatabaseBackups($domain, $database);
+
+        $maximumBackups = 20;
+        $numBackups = count($backups);
+
+        if ($numBackups > $maximumBackups) {
+            $output->writeln(
+                "Found <error>{$numBackups}</error>. Only using the first "
+                . "<comment>{$maximumBackups}</comment>"
+            );
+        }
+
+        // Put a limit of on the backup list.
+        $backups = array_slice($backups, 0, $maximumBackups);
+
+        if (empty($backups)) {
+            throw new \RuntimeException(
+                "Could not fetch database backup list for: {$database}"
+            );
+        }
+
+        /** @var DatabaseBackup $backup */
+        $backup = current($backups);
+
+        if (count($backups) > 1) {
+            $backupOptions = array_map(
+                function (DatabaseBackup $backup) {
+                    $size = (int) round(
+                        $backup->getSize() / pow(1024, 2)
+                    );
+
+                    return $backup
+                        ->getDate()
+                        ->format('D j M Y H:i')
+                    . " <comment>{$size} MB</comment>";
+                },
+                $backups
+            );
+
+            $backupQuestion = new ChoiceQuestion(
+                'Which backup would you like to use? ',
+                $backupOptions
+            );
+
+            $selectedBackup = $questionHelper->ask(
+                $input,
+                $output,
+                $backupQuestion
+            );
+
+            $backupIndex = array_search($selectedBackup, $backupOptions);
+
+            if (!array_key_exists($backupIndex, $backups)) {
+                throw new \RuntimeException(
+                    'Offset does not exist in the list of available backups.'
+                );
+            }
+
+            $backup = $backups[$backupIndex];
+        }
+
+        $archive = $backup->getTempFileName();
+
+        if (file_exists($archive)
+            && filesize($archive) === $backup->getSize()
+        ) {
+            $output->writeln(
+                "Using existing file: <comment>{$archive}</comment>"
+            );
+        } else {
+            $output->writeln(
+                "Downloading <comment>{$backup->getFileName()}</comment>. . ."
+            );
+
+            if (!$client->downloadBackup($backup)) {
+                throw new \RuntimeException(
+                    "Failed to download {$backup->getTempFileName()}"
+                );
+            }
+        }
+
+        $archiveFiles = $client->listBackupFiles($backup);
+
+        if (count($archiveFiles) !== 1) {
+            throw new \RuntimeException(
+                "Could not determine SQL dump file in {$archive}"
+            );
+        }
+
+        $importFile = current($archiveFiles);
+
+        $output->writeln(
+            "Identified SQL dump in archive: <comment>{$importFile}</comment>"
+        );
+
+        $output->writeln(
+            "Extracting archive <comment>{$archive}</comment>. . ."
+        );
+
+        $client->extractBackup($backup);
+
+        $this->importFile($importFile, $output);
+
+        $output->writeln(
+            "Removing temporary dump file <comment>{$importFile}</comment>"
+        );
+        unlink($importFile);
+    }
+
+    /**
+     * Process the request to import data through a dump file.
+     *
+     * @param QuestionHelper $questionHelper
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return void
+     * @throws \RuntimeException when the specified file could not be opened
+     *   after 10 tries.
+     */
+    protected function processFileImportRequest(
+        QuestionHelper $questionHelper,
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        $defaultName = static::DEFAULT_IMPORT_FILE_NAME;
+        $defaultFile = realpath($defaultName);
+        $file = null;
+
+        if (file_exists($defaultFile)
+            && is_readable($defaultFile)
+            && !is_dir($defaultFile)
+        ) {
+            $defaultQuestion = new ConfirmationQuestion(
+                "Decected {$defaultName} file. Should we use that? "
+            );
+
+            if ($questionHelper->ask($input, $output, $defaultQuestion)) {
+                $file = $defaultFile;
+            }
+        }
+
+        if (!isset($file)) {
+            $fileQuestion = new Question(
+                "Please enter the path to the dump file: "
+            );
+
+            $maxAttempts = 10;
+            $numAttempts = 0;
+
+            while ((!is_readable($file) || is_dir($file))
+                && ++$numAttempts <= $maxAttempts
+            ) {
+                $file = realpath(
+                    $questionHelper->ask($input, $output, $fileQuestion)
+                );
+
+                if (!is_readable($file) || is_dir($file)) {
+                    $output->writeln(
+                        '<error>Could not open specified file!</error>'
+                    );
+                }
+            }
+        }
+
+        if (!is_readable($file) || is_dir($file)) {
+            throw new \RuntimeException('Could not open specified file!');
+        }
+
+        $this->importFile($file, $output);
+    }
+
+    /**
+     * Get credentials for the destination database.
+     *
+     * @param InputInterface $input
+     * @param OutputInterface $output
+     * @return DatabaseCredentials
+     */
+    protected function fetchDatabaseCredentials(
+        InputInterface $input,
+        OutputInterface $output
+    )
+    {
+        if (!isset($this->_databaseCredentials)) {
+            if ($input->getOption('use-local-xml')) {
+                $credentials = DatabaseCredentials::fromApplication(
+                    $this->getApplication()
+                );
+                $output->writeln(
+                    'Using database credentials from '
+                    . '<comment>app/etc/local.xml</comment>'
+                );
+            } else {
+                $credentials = DatabaseCredentials::fromCommand(
+                    $this,
+                    $input,
+                    $output
+                );
+            }
+
+            $this->_databaseCredentials = $credentials;
+        }
+
+        return $this->_databaseCredentials;
+    }
+
+    /**
+     * Getter for the _databaseCredentials property.
+     *
+     * @return DatabaseCredentials
+     * @throws \LogicException when property _databaseCredentials is not set.
+     */
+    protected function getDatabaseCredentials()
+    {
+        if (!isset($this->_databaseCredentials)) {
+            throw new \LogicException('Missing property _databaseCredentials');
+        }
+
+        return $this->_databaseCredentials;
+    }
+
+    /**
+     * Update the local.xml file with the current database credentials.
+     *
+     * @param DatabaseCredentials $credentials
+     * @return void
+     */
+    public function updateLocalCredentials(DatabaseCredentials $credentials)
+    {
+        $credentials->saveToApplication(
+            $this->getApplication()
+        );
+    }
+
+    /**
+     * Create the database if it does not exist.
      *
      * @return void
      */
-    public function getDbCredentials(OutputInterface $output)
+    protected function createDatabaseIfNotExists()
     {
-        $dialog = $this->getHelper('dialog');
+        $credentials = $this->getDatabaseCredentials();
 
-        $this->dbUser = $dialog->ask(
-            $output,
-            '<question>What is the database Username?</question>',
-            $this->dbUser
-        );
-
-        $this->dbPassword = $dialog->askHiddenResponse(
-            $output,
-            '<question>What is the database Password for user '.$this->dbUser.'?</question>',
+        $this->executeDatabaseQuery(
+            "CREATE DATABASE IF NOT EXISTS `{$credentials->getDatabase()}` "
+            . 'CHARSET UTF8',
+            // Don't select the database we're about to create.
             false
         );
-
-        $this->dbHost = $dialog->ask(
-            $output,
-            '<question>What is the local database host?</question>',
-            $this->dbHost
-        );
-
-        $this->dbName = $dialog->ask(
-            $output,
-            '<question>What is the local database name?</question>',
-            $this->dbName
-        );
-
-        //@TODO validate input
     }
 
     /**
-     * Update the local.xml file with the current creds
+     * Getter for the _databaseClient property.
      *
+     * @return string
+     * @throws \RuntimeException when the local environment has no mysql client.
+     */
+    public function getDatabaseClient()
+    {
+        if (!isset($this->_databaseClient)) {
+            $client = trim(`which mysql`);
+
+            if (empty($client)) {
+                throw new \RuntimeException(
+                    'Local environment has no mysql client installed!'
+                );
+            }
+
+            $this->_databaseClient = $client;
+        }
+
+        return $this->_databaseClient;
+    }
+
+    /**
+     * Execute the given database query.
+     *
+     * @param string $sql
+     * @param boolean $selectDatabase
+     * @return void
+     * @throws \InvalidArgumentException when $selectDatabase is not a boolean.
+     * @throws \RuntimeException when the query fails.
+     * @todo Transform this logic into a MySQL client helper, much like the
+     *   ByteServiceClient.
+     */
+    protected function executeDatabaseQuery($sql, $selectDatabase = true)
+    {
+        if (!is_bool($selectDatabase)) {
+            throw new \InvalidArgumentException(
+                'Invalid flag selectDatabase: ' . gettype($selectDatabase)
+            );
+        }
+
+        // Prepare the database client executable by expanding the binary
+        // file with database credentials.
+        $executable = $this
+            ->getDatabaseCredentials()
+            ->expandToClient(
+                $this->getDatabaseClient(),
+                $selectDatabase
+            );
+
+        // Escape the query as a command line argument.
+        $query = escapeshellarg($sql);
+
+        exec(
+            "echo {$query} | {$executable} > /dev/null 2>&1 || echo ERROR",
+            $output
+        );
+
+        // If the output holds nothing, the query succeeded.
+        if (!empty($output)) {
+            throw new \RuntimeException(
+                "Query could not be executed: {$sql}"
+            );
+        }
+    }
+
+    /**
+     * Import a given SQL dump file.
+     *
+     * @param string $file
      * @param OutputInterface $output
-     *
      * @return void
+     * @throws \RuntimeException if the file could not be imported
+     * @todo Transform this logic into a MySQL client helper, much like the
+     *   ByteServiceClient.
      */
-    public function updateLocalxml()
+    protected function importFile($file, OutputInterface $output)
     {
-        $magentoRoot = $this->getApplication()->getMagentoRootFolder();
-        $localXmlPath = $magentoRoot.'/app/etc/local.xml';
-
-        $localXml = simplexml_load_file($localXmlPath);
-
-        $localXml->config->global->resources->default_setup->connection->host = $this->dbHost;
-        $localXml->config->global->resources->default_setup->connection->username = $this->dbUser;
-        $localXml->config->global->resources->default_setup->connection->password = $this->dbPassword;
-        $localXml->config->global->resources->default_setup->connection->dbname = $this->dbName;
-
-        $localXml->asXML($localXmlPath);
-    }
-
-     /**
-     * Create a database
-     *
-     * @param string $dbName 
-     *
-     * @return void
-     */
-    public function createDatabase()
-    {
-        //@TODO check if db exists
-        $command = 'echo "CREATE DATABASE '.$this->dbName.'; " | mysql -u '.$this->dbUser. ' -p'.$this->dbPassword.' -h '.$this->dbHost;
-        passthru($command);
-    }
-
-    public function getFilename(OutputInterface $output)
-    {
-        $dialog = $this->getHelper('dialog');
-
-        $filename = $dialog->ask(
-            $output,
-            '<question>What file would you like to import?</question>'
-        );
-
-        return $filename;
-    }
-
-    /**
-     * Import an .sql file
-     *
-     * @param string $fileName
-     *
-     * @return void
-     */
-    public function importFile($fileName)
-    {
-        $command = 'mysql -u '.$this->dbUser. '-p'.$this->dbPassword.' -h '.$this->dbHost.' < '.$fileName; passthru($command);
-
-        passthru('rm '.$fileName);
-    }
-
-    /**
-     * Gets a database from Byte
-     * 
-     * @param boolean $staging
-     *
-     */
-    public function getByteDb($output, $staging = false)
-    {
-        //@TODO make seperate command
-        $dialog = $this->getHelper('dialog');
-
-        // Get byte creds
-        $this->byteUser = $dialog->ask(
-            $output,
-            '<question>What is your byte username?</question>'
-        );
-
-        $this->bytePassword = $dialog->askHiddenResponse(
-            $output,
-            '<question>What is your byte password?</question>',
-            false
-        );
-
-        // Login
-        $this->byteLogin();
-        // Select DB
-        $db = $this->getSelectedDb($output);
-        // Fetch DB
-        //$this->downloadAndImport($db);
-    }
-
-    /**
-     * Login to byte
-     *
-     * @throws \Exception
-     * @return void
-     */
-    public function byteLogin()
-    {
-        $postData = ['destination' => '/protected/overzicht',
-                     'credential_0' => $this->byteUser,
-                     'credential_1' => $this->bytePassword];
-
-        $ch = curl_init();
-
-        curl_setopt($ch, CURLOPT_URL, $this->byteUrl.'LOGIN');
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        // cookie config
-        curl_setopt($ch, CURLOPT_COOKIESESSION, true);
-        curl_setopt($ch, CURLOPT_COOKIEJAR, '/tmp/bytecookie');
-        curl_setopt($ch, CURLOPT_COOKIEFILE, '/tmp/bytecookie');
-
-        curl_setopt($ch, CURLOPT_POST, true);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-
-        curl_exec($ch);
-        $returnCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($returnCode !== 200) {
-            throw new \Exception('Could not login to byte!');
+        if (!is_readable($file) || is_dir($file)) {
+            throw new \RuntimeException('Could not open specified file!');
         }
 
-    }
-
-    /**
-     * Let the user select a DB
-     *
-     */
-    public function getSelectedDb(OutputInterface $output)
-    {
-        $dialog = $this->getHelper('dialog');
-
-        $domain = $dialog->ask(
-            $output,
-            '<question>For what domain would you like to get the available backups?</question>'
+        $output->writeln(
+            "Importing database from file: <comment>{$file}</comment>"
         );
 
-        //get available DB's
-        $ch = curl_init();
+        // Prepare the database client executable by expanding the binary
+        // file with database credentials.
+        $executable = $this
+            ->getDatabaseCredentials()
+            ->expandToClient(
+                $this->getDatabaseClient()
+            );
 
-        curl_setopt($ch, CURLOPT_URL, $this->byteUrl.'dbbackups/'.$domain.'/json/');
-        //curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        exec(
+            "{$executable} < {$file} > /dev/null 2>&1 || echo ERROR",
+            $output
+        );
 
-        curl_setopt($ch, CURLOPT_COOKIESESSION, true);
-        curl_setopt($ch, CURLOPT_COOKIEJAR, '/tmp/bytecookie');
-        curl_setopt($ch, CURLOPT_COOKIEFILE, '/tmp/bytecookie');
-
-        $result = curl_exec($ch);
-        curl_close($ch);
-
-        $databases = json_decode($result);
-        var_dump($databases);
-        var_dump(count($databases));
-
-        if (count($databases) === 1) {
-            $database = $databases[0]['database'];
-        } else {
-            //@TODO database selector
+        // If the output holds nothing, the query succeeded.
+        if (!empty($output)) {
+            throw new \RuntimeException(
+                "File could not be imported: {$file}"
+            );
         }
-
-        $ch = curl_init();
-
-        curl_setopt($ch, CURLOPT_COOKIESESSION, true);
-        curl_setopt($ch, CURLOPT_COOKIEJAR, '/tmp/bytecookie');
-        curl_setopt($ch, CURLOPT_COOKIEFILE, '/tmp/bytecookie');
-        curl_setopt($ch, CURLOPT_URL, $this->byteUrl.'dbbackups/'.$domain.'/'.$database.'/json/');
-
-        $result = curl_exec($ch);
-        curl_close($ch);
-
-        $backups = json_decode($result);
-
-        $backup = $backups[0]['filename'];
-
     }
-
 }
