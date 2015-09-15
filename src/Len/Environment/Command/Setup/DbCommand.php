@@ -220,6 +220,7 @@ class DbCommand extends AbstractMagentoCommand
      * @param InputInterface $input
      * @param OutputInterface $output
      * @return void
+     * @throws \LogicException when an unsupported import method was chosen.
      */
     protected function processImportRequest(
         QuestionHelper $questionHelper,
