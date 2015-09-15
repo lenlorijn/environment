@@ -403,14 +403,19 @@ class DbCommand extends AbstractMagentoCommand
 
         $domains = $client->getDomains($registrant);
 
-        $domain = $questionHelper->ask(
-            $input,
-            $output,
-            new ChoiceQuestion(
-                'Database domain: ',
-                $domains
-            )
-        );
+        $domain = current($domains);
+
+        if (count($domains) > 1) {
+            $domain = $questionHelper->ask(
+                $input,
+                $output,
+                new ChoiceQuestion(
+                    'Database domain: '
+                    . "<comment>[{$domain}]</comment> ",
+                    $domains
+                )
+            );
+        }
 
         $output->writeln(
             "Requesting database list for <comment>{$domain}</comment>. . ."
@@ -545,12 +550,71 @@ class DbCommand extends AbstractMagentoCommand
 
         $client->extractBackup($backup);
 
+        $this->rewriteDatabaseDefiner($importFile, $output);
         $this->importFile($importFile, $output);
 
         $output->writeln(
             "Removing temporary dump file <comment>{$importFile}</comment>"
         );
         unlink($importFile);
+    }
+
+    /**
+     * Rewrite the definer of triggers and functions inside SQL import files.
+     *
+     * @param string $importFile
+     * @param OutputInterface $output
+     * @return void
+     * @throws \RuntimeException when $importFile is not a string, not a
+     *  readable file, not a writable file or a directory.
+     */
+    protected function rewriteDatabaseDefiner(
+        $importFile,
+        OutputInterface $output
+    )
+    {
+        if (!is_string($importFile)
+            || !is_readable($importFile)
+            || !is_writable($importFile)
+            || is_dir($importFile)
+        ) {
+            throw new \RuntimeException(
+                'Cannot find or alter supplied import file: '
+                . var_export($importFile, true)
+            );
+        }
+
+        $credentials = $this->getDatabaseCredentials();
+        $newDefiner = "`{$credentials->getUser()}`";
+
+        $output->writeln(
+            "Updating definers in <comment>{$newDefiner}</comment>"
+        );
+
+        file_put_contents(
+            $importFile,
+            preg_replace_callback(
+                '/DEFINER\=([^\@]+)\@/',
+                function (array $matches) use ($newDefiner, $output) {
+                    list($original, $oldDefiner) = $matches;
+                    $rv = str_replace(
+                        $oldDefiner,
+                        $newDefiner,
+                        $original
+                    );
+
+                    if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
+                        $output->writeln(
+                            "<error>{$original}</error> => "
+                            . "<comment>{$rv}</comment>"
+                        );
+                    }
+
+                    return $rv;
+                },
+                file_get_contents($importFile)
+            )
+        );
     }
 
     /**
