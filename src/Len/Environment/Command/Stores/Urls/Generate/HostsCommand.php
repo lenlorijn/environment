@@ -1,21 +1,22 @@
 <?php
 /**
- * Magerun command that shows the domains of the local magento installation.
+ * Command to generate entries for /etc/hosts.
  *
- * @package Len\Environment\Command\Stores
+ * @package Len\Environment\Command\Stores\Urls\Generate
  */
 
-namespace Len\Environment\Command\Stores;
+namespace Len\Environment\Command\Stores\Urls\Generate;
 
 use \Len\Environment\Command\Stores\Urls\HostNameFetcher;
 use \N98\Magento\Command\AbstractMagentoCommand;
+use \Symfony\Component\Console\Input\InputArgument;
 use \Symfony\Component\Console\Input\InputInterface;
 use \Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Magerun command that shows the domains of the local magento installation.
+ * Command to generate entries for /etc/hosts.
  */
-class UrlsCommand extends AbstractMagentoCommand
+class HostsCommand extends AbstractMagentoCommand
 {
     /**
      * Configure the command.
@@ -25,9 +26,13 @@ class UrlsCommand extends AbstractMagentoCommand
      */
     public function configure()
     {
-        $this->setName('len:stores:urls');
-        $this->setDescription(
-            'Shows a list of all store base URLs of the current project'
+        $this->setName('len:stores:generate:hosts');
+        $this->setDescription('Generate entries for /etc/hosts');
+        $this->addArgument(
+            'server',
+            InputArgument::OPTIONAL,
+            'The host name / IP of the server for which the entries are',
+            'localhost'
         );
     }
 
@@ -37,12 +42,23 @@ class UrlsCommand extends AbstractMagentoCommand
      * @param InputInterface $input
      * @param OutputInterface $output
      * @return void
+     * @throws \InvalidArgumentException when the supplied server argument
+     *   could not be resolved to an IP address.
      * @throws \RuntimeException when Magento could not be initialized
      * @throws \RuntimeException when Magento could not deliver a proper core
      *   resource entity.
      */
     public function execute(InputInterface $input, OutputInterface $output)
     {
+        $host = $input->getArgument('server');
+        $ipAddress = gethostbyname($host);
+
+        if (!filter_var($ipAddress, FILTER_VALIDATE_IP)) {
+            throw new \InvalidArgumentException(
+                "Could not resolve hostname to an IP: {$host} => {$ipAddress}"
+            );
+        }
+
         $this->detectMagento($output, true);
 
         if (!$this->initMagento()) {
@@ -60,7 +76,9 @@ class UrlsCommand extends AbstractMagentoCommand
         );
 
         foreach ($hostNames as $hostName) {
-            $output->writeln($hostName);
+            $output->writeln(
+                "{$ipAddress}\t{$hostName} www.{$hostName}"
+            );
         }
     }
 }

@@ -106,11 +106,14 @@ class AnonimizeCommand extends AbstractMagentoCommand {
       $writeConnection->query("UPDATE newsletter_subscriber SET subscriber_email=CONCAT('dev_newsletter_',subscriber_id,'@trash-mail.com')");
 
 
-      $this->flushCache();
+      $this->flushCache($output);
 
     }
 
-    protected function flushCache()
+    /**
+     * Flushes cache for good measure
+     */
+    protected function flushCache(OutputInterface $output)
     {
       $input = new StringInput('cache:flush');
 

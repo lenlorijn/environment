@@ -1,11 +1,11 @@
 <?php
 /**
- * Magerun command that shows the domains of the local magento installation.
+ * Command to generate Apache vhost entries.
  *
- * @package Len\Environment\Command\Stores
+ * @package Len\Environment\Command\Stores\Urls\Generate
  */
 
-namespace Len\Environment\Command\Stores;
+namespace Len\Environment\Command\Stores\Urls\Generate;
 
 use \Len\Environment\Command\Stores\Urls\HostNameFetcher;
 use \N98\Magento\Command\AbstractMagentoCommand;
@@ -13,9 +13,9 @@ use \Symfony\Component\Console\Input\InputInterface;
 use \Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Magerun command that shows the domains of the local magento installation.
+ * Command to generate Apache vhost entries.
  */
-class UrlsCommand extends AbstractMagentoCommand
+class ApacheCommand extends AbstractMagentoCommand
 {
     /**
      * Configure the command.
@@ -25,9 +25,9 @@ class UrlsCommand extends AbstractMagentoCommand
      */
     public function configure()
     {
-        $this->setName('len:stores:urls');
+        $this->setName('len:stores:generate:apache');
         $this->setDescription(
-            'Shows a list of all store base URLs of the current project'
+            'Generate ServerName and ServerAlias entries for your Apache vhost'
         );
     }
 
@@ -55,12 +55,23 @@ class UrlsCommand extends AbstractMagentoCommand
             $fetcher = new HostNameFetcher();
         }
 
-        $hostNames = $fetcher->getByConfig(
-            \Mage::getConfig()
+        $hostNames = array_values(
+            $fetcher->getByConfig(
+                \Mage::getConfig()
+            )
         );
 
-        foreach ($hostNames as $hostName) {
-            $output->writeln($hostName);
+        foreach ($hostNames as $i => $hostName) {
+            $directive = $i === 0
+                ? 'ServerName'
+                : 'ServerAlias';
+
+            $output->writeln(
+                "\t{$directive} {$hostName}"
+            );
+            $output->writeln(
+                "\tServerAlias www.{$hostName}"
+            );
         }
     }
 }
