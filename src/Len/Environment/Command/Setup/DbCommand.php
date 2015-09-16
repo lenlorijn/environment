@@ -560,6 +560,48 @@ class DbCommand extends AbstractMagentoCommand
     }
 
     /**
+     * Scan a given file for a given pattern and return the results.
+     *
+     * @param string $file
+     * @param string $pattern
+     * @return mixed
+     * @throws \InvalidArgumentException when $file is not a string.
+     * @throws \InvalidArgumentException when $pattern is not a string.
+     * @throws \RuntimeException when the grep binary is not installed.
+     */
+    protected function scanFile($file, $pattern)
+    {
+        if (!is_string($file)) {
+            throw new \InvalidArgumentException(
+                'Invalid file supplied: ' . gettype($file)
+            );
+        }
+
+        if (!is_string($pattern)) {
+            throw new \InvalidArgumentException(
+                'Invalid pattern supplied: ' . gettype($pattern)
+            );
+        }
+
+        static $binary;
+
+        if (!isset($binary)) {
+            $binary = trim(`which grep`);
+        }
+
+        if (empty($binary)) {
+            throw new \RuntimeException('Cannot proceed without grep');
+        }
+
+        $file = escapeshellarg($file);
+        $pattern = escapeshellarg($pattern);
+
+        exec("{$binary} {$pattern} {$file}", $rv);
+
+        return $rv;
+    }
+
+    /**
      * Rewrite the definer of triggers and functions inside SQL import files.
      *
      * @param string $importFile
@@ -591,30 +633,65 @@ class DbCommand extends AbstractMagentoCommand
             "Updating definers in <comment>{$newDefiner}</comment>"
         );
 
-        file_put_contents(
-            $importFile,
-            preg_replace_callback(
-                '/DEFINER\=([^\@]+)\@/',
-                function (array $matches) use ($newDefiner, $output) {
-                    list($original, $oldDefiner) = $matches;
-                    $rv = str_replace(
-                        $oldDefiner,
-                        $newDefiner,
-                        $original
-                    );
+        $needsRewrite = false;
 
-                    if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
-                        $output->writeln(
-                            "<error>{$original}</error> => "
-                            . "<comment>{$rv}</comment>"
-                        );
-                    }
+        try {
+            $scans = $this->scanFile($importFile, 'DEFINER=');
+        } catch (\RuntimeException $e) {
+            $output->writeln(
+                '<error>Failed to scan the file. Proceeding ahead</error>'
+            );
+            $needsRewrite = true;
+        }
 
-                    return $rv;
-                },
-                file_get_contents($importFile)
-            )
-        );
+        if (isset($scans) && is_array($scans) && count($scans) > 0) {
+            $numDefiners = count($scans);
+            $output->writeln(
+                "Found <comment>{$numDefiners}</comment> definers to update"
+            );
+            $needsRewrite = true;
+        }
+
+        if ($needsRewrite === true) {
+            $source = "{$importFile}.src";
+
+            // Create a copy of the import file to read from.
+            copy($importFile, $source);
+
+            $inputHandle = fopen($source, 'r');
+            $outputHandle = fopen($importFile, 'w');
+
+            while (!feof($inputHandle)) {
+                fwrite(
+                    $outputHandle,
+                    preg_replace_callback(
+                        '/DEFINER\=([^\@]+)\@/',
+                        function (array $matches) use ($newDefiner, $output) {
+                            list($original, $oldDefiner) = $matches;
+                            $rv = str_replace(
+                                $oldDefiner,
+                                $newDefiner,
+                                $original
+                            );
+
+                            if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
+                                $output->writeln(
+                                    "<error>{$original}</error> => "
+                                    . "<comment>{$rv}</comment>"
+                                );
+                            }
+
+                            return $rv;
+                        },
+                        fgets($inputHandle)
+                    )
+                );
+            }
+
+            fclose($inputHandle);
+            fclose($outputHandle);
+            unlink($source);
+        }
     }
 
     /**
