@@ -523,7 +523,7 @@ class DbCommand extends AbstractMagentoCommand
                 "Downloading <comment>{$backup->getFileName()}</comment>. . ."
             );
 
-            if (!$client->downloadBackup($backup)) {
+            if (!$client->downloadBackup($backup, $output)) {
                 throw new \RuntimeException(
                     "Failed to download {$backup->getTempFileName()}"
                 );
