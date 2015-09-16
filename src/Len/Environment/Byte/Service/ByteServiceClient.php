@@ -503,7 +503,11 @@ class ByteServiceClient
             }
         }
 
-        if (isset($progressBar)) {
+        fclose($handle);
+
+        $rv = $backup->getSize() === filesize($destination);
+
+        if (isset($progressBar) && $rv === true) {
             $progressBar->finish();
         }
 
@@ -512,9 +516,7 @@ class ByteServiceClient
             $output->write(PHP_EOL);
         }
 
-        fclose($handle);
-
-        return $backup->getSize() === filesize($destination);
+        return $rv;
     }
 
     /**
