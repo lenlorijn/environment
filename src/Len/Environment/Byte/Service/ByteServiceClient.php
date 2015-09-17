@@ -14,6 +14,8 @@ use \DateTime;
 use \GuzzleHttp\Client;
 use \GuzzleHttp\Exception\ClientException;
 use \Len\Environment\Credentials\ByteCredentials;
+use \Symfony\Component\Console\Helper\ProgressBar;
+use \Symfony\Component\Console\Output\OutputInterface;
 
 /**
  * Service client for Byte hosting.
@@ -460,9 +462,13 @@ class ByteServiceClient
      * Returns whether the download succeeded fully.
      *
      * @param DatabaseBackup $backup
+     * @param null|OutputInterface $output
      * @return bool
      */
-    public function downloadBackup(DatabaseBackup $backup)
+    public function downloadBackup(
+        DatabaseBackup $backup,
+        OutputInterface $output = null
+    )
     {
         $client = $this->getClient();
         $domain = $backup->getDomain();
@@ -476,18 +482,41 @@ class ByteServiceClient
         );
 
         $body = $response->getBody();
-        $output = fopen($destination, 'w');
+        $handle = fopen($destination, 'w');
 
-        while (!$body->eof()) {
-            fwrite(
-                $output,
-                $body->read(static::DOWNLOAD_PACKET_SIZE)
+        if (isset($output)) {
+            $progressBar = new ProgressBar($output);
+            $progressBar->setRedrawFrequency(
+                static::DOWNLOAD_PACKET_SIZE * 100
             );
+            $progressBar->start($backup->getSize());
         }
 
-        fclose($output);
+        while (!$body->eof()) {
+            $progress = (int) fwrite(
+                $handle,
+                $body->read(static::DOWNLOAD_PACKET_SIZE)
+            );
 
-        return $backup->getSize() === filesize($destination);
+            if (isset($progressBar)) {
+                $progressBar->advance($progress);
+            }
+        }
+
+        fclose($handle);
+
+        $rv = $backup->getSize() === filesize($destination);
+
+        if (isset($progressBar) && $rv === true) {
+            $progressBar->finish();
+        }
+
+        // Fix output from progressbar.
+        if (isset($output)) {
+            $output->write(PHP_EOL);
+        }
+
+        return $rv;
     }
 
     /**

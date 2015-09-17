@@ -523,7 +523,7 @@ class DbCommand extends AbstractMagentoCommand
                 "Downloading <comment>{$backup->getFileName()}</comment>. . ."
             );
 
-            if (!$client->downloadBackup($backup)) {
+            if (!$client->downloadBackup($backup, $output)) {
                 throw new \RuntimeException(
                     "Failed to download {$backup->getTempFileName()}"
                 );
@@ -550,13 +550,230 @@ class DbCommand extends AbstractMagentoCommand
 
         $client->extractBackup($backup);
 
+        $this->cleanTables(
+            $importFile,
+            [
+                // AOE Profiler data.
+                'aoe_profiler_run',
+
+                // Core sessions.
+                'core_session',
+
+                // LOG.
+                'log_url',
+                'log_url_info',
+                'log_visitor',
+                'log_visitor_info',
+                'log_visitor_online',
+                'report_event',
+                'report_compared_product_index',
+                'report_viewed_product_index',
+                'report_viewed_product_aggregated_daily',
+                'report_viewed_product_aggregated_monthly',
+                'report_viewed_product_aggregated_yearly',
+
+                // Data flow.
+                'dataflow_batch',
+                'dataflow_batch_export',
+                'dataflow_batch_import',
+                'dataflow_import_data',
+                'dataflow_session',
+
+                // Import/export.
+                'importexport_importdata',
+
+                // Sales.
+                'sales_order_aggregated_created',
+                'sales_order_aggregated_updated',
+                'sales_order_tax',
+                'sales_order_tax_item',
+                'sales_flat_creditmemo',
+                'sales_flat_creditmemo_comment',
+                'sales_flat_creditmemo_grid',
+                'sales_flat_creditmemo_item',
+                'sales_flat_invoice',
+                'sales_flat_invoice_comment',
+                'sales_flat_invoice_grid',
+                'sales_flat_invoice_item',
+                'sales_flat_order',
+                'sales_flat_order_address',
+                'sales_flat_order_grid',
+                'sales_flat_order_item',
+                'sales_flat_order_payment',
+                'sales_flat_order_status_history',
+                'sales_flat_quote',
+                'sales_flat_quote_address',
+                'sales_flat_quote_address_item',
+                'sales_flat_quote_item',
+                'sales_flat_quote_item_option',
+                'sales_flat_quote_payment',
+                'sales_flat_quote_shipment_rate',
+                'sales_flat_shipment',
+                'sales_flat_shipment_comment',
+                'sales_flat_shipment_grid',
+                'sales_flat_shipment_item',
+                'sales_flat_shipment_track',
+                'sales_recurring_profile',
+                'sales_recurring_profile_order',
+                'sales_refunded_aggregated',
+                'sales_refunded_aggregated_order',
+                'sales_payment_transaction',
+                'sales_bestsellers_aggregated_daily',
+                'sales_bestsellers_aggregated_monthly',
+                'sales_bestsellers_aggregated_yearly',
+
+                // Customers.
+                'customer_address_entity',
+                'customer_address_entity_datetime',
+                'customer_address_entity_decimal',
+                'customer_address_entity_int',
+                'customer_address_entity_text',
+                'customer_address_entity_varchar',
+                'customer_entity',
+                'customer_entity_datetime',
+                'customer_entity_decimal',
+                'customer_entity_int',
+                'customer_entity_text',
+                'customer_entity_varchar',
+                'wishlist',
+                'wishlist_item',
+                'wishlist_item_option',
+
+                // Newsletter.
+                'newsletter_problem',
+                'newsletter_queue',
+                'newsletter_queue_link',
+                'newsletter_queue_store_link',
+                'newsletter_subscriber',
+                'newsletter_template'
+            ],
+            $output
+        );
         $this->rewriteDatabaseDefiner($importFile, $output);
+
         $this->importFile($importFile, $output);
 
         $output->writeln(
             "Removing temporary dump file <comment>{$importFile}</comment>"
         );
         unlink($importFile);
+    }
+
+    /**
+     * Scan a given file for a given pattern and return the results.
+     *
+     * @param string $file
+     * @param string $pattern
+     * @return mixed
+     * @throws \InvalidArgumentException when $file is not a string.
+     * @throws \InvalidArgumentException when $pattern is not a string.
+     * @throws \RuntimeException when the grep binary is not installed.
+     */
+    protected function scanFile($file, $pattern)
+    {
+        if (!is_string($file)) {
+            throw new \InvalidArgumentException(
+                'Invalid file supplied: ' . gettype($file)
+            );
+        }
+
+        if (!is_string($pattern)) {
+            throw new \InvalidArgumentException(
+                'Invalid pattern supplied: ' . gettype($pattern)
+            );
+        }
+
+        static $binary;
+
+        if (!isset($binary)) {
+            $binary = trim(`which grep`);
+        }
+
+        if (empty($binary)) {
+            throw new \RuntimeException('Cannot proceed without grep');
+        }
+
+        $file = escapeshellarg($file);
+        $pattern = escapeshellarg($pattern);
+
+        exec("{$binary} {$pattern} {$file}", $rv);
+
+        return $rv;
+    }
+
+    /**
+     * Filter out inserts for the given tables.
+     *
+     * @param string $importFile
+     * @param array $tables
+     * @param OutputInterface $output
+     * @return void
+     * @throws \RuntimeException when $importFile is not a string, not a
+     *  readable file, not a writable file or a directory.
+     */
+    protected function cleanTables(
+        $importFile,
+        array $tables = [],
+        OutputInterface $output
+    ) {
+        if (!is_string($importFile)
+            || !is_readable($importFile)
+            || !is_writable($importFile)
+            || is_dir($importFile)
+        ) {
+            throw new \RuntimeException(
+                'Cannot find or alter supplied import file: '
+                . var_export($importFile, true)
+            );
+        }
+
+        $output->writeln(
+            'Cleaning tables: <comment>'
+            . implode(', ', $tables)
+            . '</comment>'
+        );
+
+        $list = implode(
+            '|',
+            array_map('preg_quote', $tables)
+        );
+        $quote = preg_quote('`');
+        $pattern = "/into\\s+{$quote}?({$list}){$quote}?/i";
+
+        $source = "{$importFile}.src";
+
+        // Create a copy of the import file to read from.
+        copy($importFile, $source);
+
+        $inputHandle = fopen($source, 'r');
+        $outputHandle = fopen($importFile, 'w');
+        $numRemoved = 0;
+
+        while (!feof($inputHandle)) {
+            $buffer = fgets($inputHandle);
+
+            if (preg_match($pattern, $buffer, $matches)) {
+                if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
+                    $table = next($matches);
+                    $output->writeln(
+                        "Skipping entry for <comment>{$table}</comment>"
+                    );
+                }
+
+                $numRemoved++;
+                continue;
+            }
+
+            fwrite($outputHandle, $buffer);
+        }
+
+        fclose($inputHandle);
+        fclose($outputHandle);
+        unlink($source);
+
+        $output->writeln(
+            "Filtered out <comment>{$numRemoved}</comment> inserts"
+        );
     }
 
     /**
@@ -591,30 +808,65 @@ class DbCommand extends AbstractMagentoCommand
             "Updating definers in <comment>{$newDefiner}</comment>"
         );
 
-        file_put_contents(
-            $importFile,
-            preg_replace_callback(
-                '/DEFINER\=([^\@]+)\@/',
-                function (array $matches) use ($newDefiner, $output) {
-                    list($original, $oldDefiner) = $matches;
-                    $rv = str_replace(
-                        $oldDefiner,
-                        $newDefiner,
-                        $original
-                    );
+        $needsRewrite = false;
 
-                    if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
-                        $output->writeln(
-                            "<error>{$original}</error> => "
-                            . "<comment>{$rv}</comment>"
-                        );
-                    }
+        try {
+            $scans = $this->scanFile($importFile, 'DEFINER=');
+        } catch (\RuntimeException $e) {
+            $output->writeln(
+                '<error>Failed to scan the file. Proceeding ahead</error>'
+            );
+            $needsRewrite = true;
+        }
 
-                    return $rv;
-                },
-                file_get_contents($importFile)
-            )
-        );
+        if (isset($scans) && is_array($scans) && count($scans) > 0) {
+            $numDefiners = count($scans);
+            $output->writeln(
+                "Found <comment>{$numDefiners}</comment> definers to update"
+            );
+            $needsRewrite = true;
+        }
+
+        if ($needsRewrite === true) {
+            $source = "{$importFile}.src";
+
+            // Create a copy of the import file to read from.
+            copy($importFile, $source);
+
+            $inputHandle = fopen($source, 'r');
+            $outputHandle = fopen($importFile, 'w');
+
+            while (!feof($inputHandle)) {
+                fwrite(
+                    $outputHandle,
+                    preg_replace_callback(
+                        '/DEFINER\=([^\@]+)\@/',
+                        function (array $matches) use ($newDefiner, $output) {
+                            list($original, $oldDefiner) = $matches;
+                            $rv = str_replace(
+                                $oldDefiner,
+                                $newDefiner,
+                                $original
+                            );
+
+                            if ($output->getVerbosity() >= $output::VERBOSITY_VERBOSE) {
+                                $output->writeln(
+                                    "<error>{$original}</error> => "
+                                    . "<comment>{$rv}</comment>"
+                                );
+                            }
+
+                            return $rv;
+                        },
+                        fgets($inputHandle)
+                    )
+                );
+            }
+
+            fclose($inputHandle);
+            fclose($outputHandle);
+            unlink($source);
+        }
     }
 
     /**
