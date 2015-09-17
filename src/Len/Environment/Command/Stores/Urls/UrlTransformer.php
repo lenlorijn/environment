@@ -298,6 +298,11 @@ class UrlTransformer
 
         $currentUrl = $store->getBaseUrl($store::URL_TYPE_LINK, $secure);
         $path = parse_url($currentUrl, PHP_URL_PATH);
+
+        if ($store->isAdmin()) {
+            $path = preg_replace('/^\/n98-magerun/', '', $path);
+        }
+
         $scheme = parse_url($currentUrl, PHP_URL_SCHEME);
         $domain = $this->createDomain($store);
 
