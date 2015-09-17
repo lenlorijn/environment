@@ -228,8 +228,7 @@ class DbCommand extends AbstractMagentoCommand
         OutputInterface $output
     )
     {
-        $importMethods = ['live', 'staging', 'file'];
-        $byteMethods = ['live', 'staging'];
+        $importMethods = ['byte:live', 'byte:staging', 'local:file'];
 
         $importMethodQuestion = new ChoiceQuestion(
             'What is the source? ',
@@ -237,9 +236,10 @@ class DbCommand extends AbstractMagentoCommand
         );
 
         $method = $questionHelper->ask($input, $output, $importMethodQuestion);
+        list($methodGroup) = explode(':', $method, 2);
 
         // Ensure there is a byte client at this point.
-        if (in_array($method, $byteMethods, true)) {
+        if ($methodGroup === 'byte') {
             try {
                 $this->getByteClient();
             } catch (\LogicException $e) {
@@ -254,21 +254,21 @@ class DbCommand extends AbstractMagentoCommand
         }
 
         switch ($method) {
-            case 'file':
+            case 'local:file':
                 $this->processFileImportRequest(
                     $questionHelper,
                     $input,
                     $output
                 );
                 break;
-            case 'staging':
+            case 'byte:staging':
                 $this->processByteStagingImportRequest(
                     $questionHelper,
                     $input,
                     $output
                 );
                 break;
-            case 'live':
+            case 'byte:live':
                 $this->processByteLiveImportRequest(
                     $questionHelper,
                     $input,
@@ -996,6 +996,26 @@ class DbCommand extends AbstractMagentoCommand
     }
 
     /**
+     * Drop the current database, if it exists.
+     *
+     * @return void
+     */
+    protected function dropDatabaseIfExists()
+    {
+        $credentials = $this->getDatabaseCredentials();
+
+        try {
+            $this->executeDatabaseQuery(
+                "DROP DATABASE `{$credentials->getDatabase()}`",
+                // Don't select the database we're about to drop.
+                false
+            );
+        } catch (\RuntimeException $e) {
+            // Well, maybe it wasn't there, then.
+        }
+    }
+
+    /**
      * Create the database if it does not exist.
      *
      * @return void
@@ -1098,6 +1118,9 @@ class DbCommand extends AbstractMagentoCommand
         $output->writeln(
             "Importing database from file: <comment>{$file}</comment>"
         );
+
+        $this->dropDatabaseIfExists();
+        $this->createDatabaseIfNotExists();
 
         // Prepare the database client executable by expanding the binary
         // file with database credentials.
