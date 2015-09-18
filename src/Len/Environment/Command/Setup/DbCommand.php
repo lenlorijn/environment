@@ -738,7 +738,7 @@ class DbCommand extends AbstractMagentoCommand
             array_map('preg_quote', $tables)
         );
         $quote = preg_quote('`');
-        $pattern = "/into\\s+{$quote}?({$list}){$quote}?/i";
+        $pattern = "/into\\s+{$quote}?({$list}){$quote}?\\s/i";
 
         $source = "{$importFile}.src";
 
