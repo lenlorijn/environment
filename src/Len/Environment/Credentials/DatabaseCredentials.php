@@ -107,7 +107,7 @@ final class DatabaseCredentials
      */
     private function setPassword($password)
     {
-        if (!is_string($password) || empty($password)) {
+        if (!is_string($password)) {
             throw new \InvalidArgumentException(
                 'Invalid password supplied: '
                 . var_export($password, true)
