@@ -287,8 +287,7 @@ class UrlTransformer
     public function transformBaseUrl(
         \Mage_Core_Model_Store $store,
         $secure = false
-    )
-    {
+    ) {
         if (!is_bool($secure)) {
             throw new \InvalidArgumentException(
                 'Invalid value for $secure supplied. Expected a boolean. Got: '
@@ -299,14 +298,35 @@ class UrlTransformer
         $currentUrl = $store->getBaseUrl($store::URL_TYPE_LINK, $secure);
         $path = parse_url($currentUrl, PHP_URL_PATH);
 
+        // The executable somehow ends up in the admin store URL.
         if ($store->isAdmin()) {
-            $path = preg_replace('/^\/n98-magerun/', '', $path);
+            // Let's strip it out.
+            $path = preg_replace(
+                sprintf(
+                    '/^\/%s/',
+                    preg_quote(
+                        $this->getPharName()
+                    )
+                ),
+                '',
+                $path
+            );
         }
 
         $scheme = parse_url($currentUrl, PHP_URL_SCHEME);
         $domain = $this->createDomain($store);
 
         return "{$scheme}://{$domain}{$path}";
+    }
+
+    /**
+     * Get the basename of the phar that is running this command.
+     *
+     * @return string
+     */
+    private function getPharName()
+    {
+        return basename(reset($_SERVER['argv']));
     }
 
     /**
