@@ -36,23 +36,23 @@ class DbCommand extends AbstractMagentoCommand
     /**
      * The credentials used to authenticate with the database.
      *
-     * @var DatabaseCredentials $_databaseCredentials
+     * @var DatabaseCredentials $databaseCredentials
      */
-    protected $_databaseCredentials;
+    protected $databaseCredentials;
 
     /**
      * The path to the database client binary.
      *
-     * @var string $_databaseClient
+     * @var string $databaseClient
      */
-    protected $_databaseClient;
+    protected $databaseClient;
 
     /**
      * The Byte Service Client.
      *
-     * @var ByteServiceClient $_byteClient
+     * @var ByteServiceClient $byteClient
      */
-    protected $_byteClient;
+    protected $byteClient;
 
     /**
      * Configure the command.
@@ -75,6 +75,13 @@ class DbCommand extends AbstractMagentoCommand
             'b',
             InputOption::VALUE_NONE,
             'Skip authentication using ' . ByteServiceClient::AUTH_FILE
+        );
+
+        $this->addOption(
+            'skip-data-stripping',
+            'd',
+            InputOption::VALUE_NONE,
+            'Skip the removal of sensitive and verbose data'
         );
     }
 
@@ -192,11 +199,11 @@ class DbCommand extends AbstractMagentoCommand
      */
     protected function getByteClient()
     {
-        if (!isset($this->_byteClient)) {
+        if (!isset($this->byteClient)) {
             throw new \LogicException('Missing property _byteClient');
         }
 
-        return $this->_byteClient;
+        return $this->byteClient;
     }
 
     /**
@@ -207,7 +214,7 @@ class DbCommand extends AbstractMagentoCommand
      */
     protected function setByteClient(ByteServiceClient $byteClient)
     {
-        $this->_byteClient = $byteClient;
+        $this->byteClient = $byteClient;
 
         return $this;
     }
@@ -550,105 +557,108 @@ class DbCommand extends AbstractMagentoCommand
 
         $client->extractBackup($backup);
 
-        $this->cleanTables(
-            $importFile,
-            [
-                // AOE Profiler data.
-                'aoe_profiler_run',
+        if ($input->getOption('skip-data-stripping') !== true) {
+            $this->cleanTables(
+                $importFile,
+                [
+                    // AOE Profiler data.
+                    'aoe_profiler_run',
 
-                // Core sessions.
-                'core_session',
+                    // Core sessions.
+                    'core_session',
 
-                // LOG.
-                'log_url',
-                'log_url_info',
-                'log_visitor',
-                'log_visitor_info',
-                'log_visitor_online',
-                'report_event',
-                'report_compared_product_index',
-                'report_viewed_product_index',
-                'report_viewed_product_aggregated_daily',
-                'report_viewed_product_aggregated_monthly',
-                'report_viewed_product_aggregated_yearly',
+                    // LOG.
+                    'log_url',
+                    'log_url_info',
+                    'log_visitor',
+                    'log_visitor_info',
+                    'log_visitor_online',
+                    'report_event',
+                    'report_compared_product_index',
+                    'report_viewed_product_index',
+                    'report_viewed_product_aggregated_daily',
+                    'report_viewed_product_aggregated_monthly',
+                    'report_viewed_product_aggregated_yearly',
 
-                // Data flow.
-                'dataflow_batch',
-                'dataflow_batch_export',
-                'dataflow_batch_import',
-                'dataflow_import_data',
-                'dataflow_session',
+                    // Data flow.
+                    'dataflow_batch',
+                    'dataflow_batch_export',
+                    'dataflow_batch_import',
+                    'dataflow_import_data',
+                    'dataflow_session',
 
-                // Import/export.
-                'importexport_importdata',
+                    // Import/export.
+                    'importexport_importdata',
 
-                // Sales.
-                'sales_order_aggregated_created',
-                'sales_order_aggregated_updated',
-                'sales_order_tax',
-                'sales_order_tax_item',
-                'sales_flat_creditmemo',
-                'sales_flat_creditmemo_comment',
-                'sales_flat_creditmemo_grid',
-                'sales_flat_creditmemo_item',
-                'sales_flat_invoice',
-                'sales_flat_invoice_comment',
-                'sales_flat_invoice_grid',
-                'sales_flat_invoice_item',
-                'sales_flat_order',
-                'sales_flat_order_address',
-                'sales_flat_order_grid',
-                'sales_flat_order_item',
-                'sales_flat_order_payment',
-                'sales_flat_order_status_history',
-                'sales_flat_quote',
-                'sales_flat_quote_address',
-                'sales_flat_quote_address_item',
-                'sales_flat_quote_item',
-                'sales_flat_quote_item_option',
-                'sales_flat_quote_payment',
-                'sales_flat_quote_shipment_rate',
-                'sales_flat_shipment',
-                'sales_flat_shipment_comment',
-                'sales_flat_shipment_grid',
-                'sales_flat_shipment_item',
-                'sales_flat_shipment_track',
-                'sales_recurring_profile',
-                'sales_recurring_profile_order',
-                'sales_refunded_aggregated',
-                'sales_refunded_aggregated_order',
-                'sales_payment_transaction',
-                'sales_bestsellers_aggregated_daily',
-                'sales_bestsellers_aggregated_monthly',
-                'sales_bestsellers_aggregated_yearly',
+                    // Sales.
+                    'sales_order_aggregated_created',
+                    'sales_order_aggregated_updated',
+                    'sales_order_tax',
+                    'sales_order_tax_item',
+                    'sales_flat_creditmemo',
+                    'sales_flat_creditmemo_comment',
+                    'sales_flat_creditmemo_grid',
+                    'sales_flat_creditmemo_item',
+                    'sales_flat_invoice',
+                    'sales_flat_invoice_comment',
+                    'sales_flat_invoice_grid',
+                    'sales_flat_invoice_item',
+                    'sales_flat_order',
+                    'sales_flat_order_address',
+                    'sales_flat_order_grid',
+                    'sales_flat_order_item',
+                    'sales_flat_order_payment',
+                    'sales_flat_order_status_history',
+                    'sales_flat_quote',
+                    'sales_flat_quote_address',
+                    'sales_flat_quote_address_item',
+                    'sales_flat_quote_item',
+                    'sales_flat_quote_item_option',
+                    'sales_flat_quote_payment',
+                    'sales_flat_quote_shipment_rate',
+                    'sales_flat_shipment',
+                    'sales_flat_shipment_comment',
+                    'sales_flat_shipment_grid',
+                    'sales_flat_shipment_item',
+                    'sales_flat_shipment_track',
+                    'sales_recurring_profile',
+                    'sales_recurring_profile_order',
+                    'sales_refunded_aggregated',
+                    'sales_refunded_aggregated_order',
+                    'sales_payment_transaction',
+                    'sales_bestsellers_aggregated_daily',
+                    'sales_bestsellers_aggregated_monthly',
+                    'sales_bestsellers_aggregated_yearly',
 
-                // Customers.
-                'customer_address_entity',
-                'customer_address_entity_datetime',
-                'customer_address_entity_decimal',
-                'customer_address_entity_int',
-                'customer_address_entity_text',
-                'customer_address_entity_varchar',
-                'customer_entity',
-                'customer_entity_datetime',
-                'customer_entity_decimal',
-                'customer_entity_int',
-                'customer_entity_text',
-                'customer_entity_varchar',
-                'wishlist',
-                'wishlist_item',
-                'wishlist_item_option',
+                    // Customers.
+                    'customer_address_entity',
+                    'customer_address_entity_datetime',
+                    'customer_address_entity_decimal',
+                    'customer_address_entity_int',
+                    'customer_address_entity_text',
+                    'customer_address_entity_varchar',
+                    'customer_entity',
+                    'customer_entity_datetime',
+                    'customer_entity_decimal',
+                    'customer_entity_int',
+                    'customer_entity_text',
+                    'customer_entity_varchar',
+                    'wishlist',
+                    'wishlist_item',
+                    'wishlist_item_option',
 
-                // Newsletter.
-                'newsletter_problem',
-                'newsletter_queue',
-                'newsletter_queue_link',
-                'newsletter_queue_store_link',
-                'newsletter_subscriber',
-                'newsletter_template'
-            ],
-            $output
-        );
+                    // Newsletter.
+                    'newsletter_problem',
+                    'newsletter_queue',
+                    'newsletter_queue_link',
+                    'newsletter_queue_store_link',
+                    'newsletter_subscriber',
+                    'newsletter_template'
+                ],
+                $output
+            );
+        }
+
         $this->rewriteDatabaseDefiner($importFile, $output);
 
         $this->importFile($importFile, $output);
@@ -944,7 +954,7 @@ class DbCommand extends AbstractMagentoCommand
         OutputInterface $output
     )
     {
-        if (!isset($this->_databaseCredentials)) {
+        if (!isset($this->databaseCredentials)) {
             if ($input->getOption('use-local-xml')) {
                 $credentials = DatabaseCredentials::fromApplication(
                     $this->getApplication()
@@ -961,10 +971,10 @@ class DbCommand extends AbstractMagentoCommand
                 );
             }
 
-            $this->_databaseCredentials = $credentials;
+            $this->databaseCredentials = $credentials;
         }
 
-        return $this->_databaseCredentials;
+        return $this->databaseCredentials;
     }
 
     /**
@@ -975,11 +985,11 @@ class DbCommand extends AbstractMagentoCommand
      */
     protected function getDatabaseCredentials()
     {
-        if (!isset($this->_databaseCredentials)) {
+        if (!isset($this->databaseCredentials)) {
             throw new \LogicException('Missing property _databaseCredentials');
         }
 
-        return $this->_databaseCredentials;
+        return $this->databaseCredentials;
     }
 
     /**
@@ -1040,7 +1050,7 @@ class DbCommand extends AbstractMagentoCommand
      */
     public function getDatabaseClient()
     {
-        if (!isset($this->_databaseClient)) {
+        if (!isset($this->databaseClient)) {
             $client = trim(`which mysql`);
 
             if (empty($client)) {
@@ -1049,10 +1059,10 @@ class DbCommand extends AbstractMagentoCommand
                 );
             }
 
-            $this->_databaseClient = $client;
+            $this->databaseClient = $client;
         }
 
-        return $this->_databaseClient;
+        return $this->databaseClient;
     }
 
     /**
